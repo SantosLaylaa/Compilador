@@ -1,5 +1,6 @@
 import re
 import sys
+import json
 
 # ESTRUTURAS DE DADOS
 
@@ -48,17 +49,32 @@ class ASTNode:
         self.rotulo = rotulo
         self.filhos = filhos if filhos else []
 
-    def imprimir(self, nivel=0):
-        indentacao = "  " * nivel
-        print(f"{indentacao}{self.rotulo}")
-        for filho in self.filhos:
-            filho.imprimir(nivel + 1)
+    # Árvore visual
+    def imprimir_visual(self, prefixo="", ultimo=True, raiz=True):
+        if raiz:
+            print(self.rotulo)
+            proximo_prefixo = ""
+        else:
+            marcador = "└── " if ultimo else "├── "
+            print(f"{prefixo}{marcador}{self.rotulo}")
+            proximo_prefixo = prefixo + ("    " if ultimo else "│   ")
+        
+        for i, filho in enumerate(self.filhos):
+            ultimo_filho = (i == len(self.filhos) - 1)
+            filho.imprimir_visual(proximo_prefixo, ultimo_filho, False)
+
+    # Conversão para "dicionário" JSON
+    def para_dicionario(self):
+        dicionario = {"no": self.rotulo}
+        if self.filhos:
+            dicionario["filhos"] = [filho.para_dicionario() for filho in self.filhos]
+        return dicionario
 
 # 1. ANÁLISE LÉXICA
 
 class Lexer:
     REGRAS = [
-        ('PALAVRA_RESERVADA', r'\b(int|float|double|char|void|if|else|while|return|public|class|static)\b'),
+        ('PALAVRA_RESERVADA', r'\b(auto|break|case|char|const|continue|default|do|double|else|enum|extern|float|for|goto|if|inline|int|long|register|restrict|return|short|signed|sizeof|static|struct|switch|typedef|typeof|typeof_unqual|union|unsigned|void|volatile|while|alignas|alignof|bool|true|false|static_assert|thread_local|constexpr|nullptr)\b'),
         ('IDENTIFICADOR', r'[a-zA-Z_][a-zA-Z0-9_]*'),
         ('FLOAT_NUMBER', r'\d+\.\d+'),
         ('NUMBER', r'\d+'),
@@ -89,8 +105,8 @@ class Lexer:
             elif tipo == 'MISMATCH':
                 self.erros.append(f"[ERRO LÉXICO] Caractere inválido '{lexema}' na linha {linha_atual}")
                 continue
-            
-            # Se for IDENTIFICADOR, o atributo vira o id da tabela
+
+            # se for identificador, o atributo vira o id da tabela
             if tipo == 'IDENTIFICADOR':
                 atributo = self.tabela_simbolos.obter_ou_inserir(lexema)
             else:
@@ -148,7 +164,7 @@ class Parser:
         id_token = self.match('IDENTIFICADOR')
         
         if tipo_token and id_token:
-            # Atualiza o tipo na Tabela de Símbolos para a checagem semântica
+            # Atualiza o tipo na tabela de símbolos para a checagem semântica
             self.tabela_simbolos.definir_tipo(id_token.lexema_original, tipo_token.lexema_original)
             
             if self.match('DELIMITADOR', ';'):
@@ -167,7 +183,7 @@ class Parser:
                 )
 
             expr_node = self.parse_expressao()
-            if self.match('DELIMITADOR', ';') or self.match('DELIMITADOR', ';'):
+            if self.match('DELIMITADOR', ';'):
                 return ASTNode('Atribuicao', [
                     ASTNode(f"ID ({id_token.lexema_original})"),
                     ASTNode(f"OPERADOR ({op_token.lexema_original})"),
@@ -176,17 +192,33 @@ class Parser:
         return None
 
     def parse_expressao(self):
-        termo1 = self.parse_termo()
+        # Soma e Subtração
+        no_esquerdo = self.parse_termo()
         
         token_atual = self.token_atual()
-        if token_atual and token_atual.tipo == 'OPERADOR' and token_atual.lexema_original in ['+', '-', '*', '/']:
+        while token_atual and token_atual.tipo == 'OPERADOR' and token_atual.lexema_original in ['+', '-']:
             op_token = self.match('OPERADOR')
-            termo2 = self.parse_termo()
-            return ASTNode(f"Expressao ({op_token.lexema_original})", [termo1, termo2])
+            no_direito = self.parse_termo()
+            no_esquerdo = ASTNode(f"Expressao ({op_token.lexema_original})", [no_esquerdo, no_direito])
+            token_atual = self.token_atual()
             
-        return termo1
+        return no_esquerdo
 
     def parse_termo(self):
+        # Multiplicação e Divisão (maior prioridade que soma/subtração)
+        no_esquerdo = self.parse_fator()
+        
+        token_atual = self.token_atual()
+        while token_atual and token_atual.tipo == 'OPERADOR' and token_atual.lexema_original in ['*', '/']:
+            op_token = self.match('OPERADOR')
+            no_direito = self.parse_fator()
+            no_esquerdo = ASTNode(f"Termo ({op_token.lexema_original})", [no_esquerdo, no_direito])
+            token_atual = self.token_atual()
+            
+        return no_esquerdo
+
+    def parse_fator(self):
+        # Valores básicos e Parênteses (prioridade máxima)
         token = self.token_atual()
         if token:
             if token.tipo == 'IDENTIFICADOR':
@@ -197,23 +229,32 @@ class Parser:
                         f"[ERRO SEMÂNTICO] Variável '{token.lexema_original}' utilizada na linha {token.linha} não foi declarada previamente."
                     )
                 return ASTNode(f"ID ({token.lexema_original})")
+            
             elif token.tipo == 'NUMBER':
                 self.match('NUMBER')
                 return ASTNode(f"NUMBER ({token.lexema_original})")
+            
             elif token.tipo == 'FLOAT_NUMBER':
                 self.match('FLOAT_NUMBER')
                 return ASTNode(f"FLOAT_NUMBER ({token.lexema_original})")
+            
             elif token.tipo == 'STRING_LITERAL':
                 self.match('STRING_LITERAL')
                 return ASTNode(f"STRING_LITERAL ({token.lexema_original})")
+            
+            elif token.tipo == 'DELIMITADOR' and token.lexema_original == '(':
+                # Lida com expressões matemáticas dentro de parênteses
+                self.match('DELIMITADOR', '(')
+                no_interno = self.parse_expressao()
+                self.match('DELIMITADOR', ')')
+                return ASTNode("Agrupamento ()", [no_interno])
+                
         return ASTNode("Erro_Sintatico")
-
-
-# TESTE COM O CODIGO FONTE
-
+    
+# Teste com o código fonte
 if __name__ == "__main__":
     nome_arquivo = "codigo_teste.c"
-    print("=== INICIANDO COMPILADOR ===")
+    print("=== INICIANDO COMPILADOR AV3 ===")
     
     try:
         with open(nome_arquivo, "r") as f:
@@ -223,7 +264,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     tabela_simbolos = TabelaSimbolos()
-    
+
     # 1. Fase Léxica
     lexer = Lexer(codigo, tabela_simbolos)
     tokens = lexer.analisar()
@@ -235,12 +276,18 @@ if __name__ == "__main__":
     parser = Parser(tokens, tabela_simbolos)
     parser.analisar()
     
-    print("\n--- ÁRVORE SINTÁTICA ABSTRATA (AST) ---")
+    print("\n--- ÁRVORE SINTÁTICA ABSTRATA (AST) - VISUAL ---")
+    ast_em_dicionarios = []
+    
     for ast in parser.ast_roots:
-        ast.imprimir()
+        # Imprime a árvore com os tracinhos no terminal
+        ast.imprimir_visual()
         print("")
+
+        # Guarda o nó num formato compatível com JSON
+        ast_em_dicionarios.append(ast.para_dicionario())
         
-    print("--- VALIDAÇÃO SEMÂNTICA ---")
+    print("\n--- VALIDAÇÃO SEMÂNTICA ---")
     if parser.erros_semanticos:
         for erro in parser.erros_semanticos:
             print(erro)
