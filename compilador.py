@@ -246,7 +246,7 @@ class Parser:
 # Teste com o código fonte
 if __name__ == "__main__":
     nome_arquivo = "codigo_teste.c"
-    print("=== INICIANDO COMPILADOR AV3 ===")
+    print("--- INICIANDO COMPILADOR ---")
     
     try:
         with open(nome_arquivo, "r") as f:
