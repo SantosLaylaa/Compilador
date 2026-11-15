@@ -1,6 +1,5 @@
 import re
 import sys
-import json
 
 # ESTRUTURAS DE DADOS
 
@@ -62,13 +61,6 @@ class ASTNode:
         for i, filho in enumerate(self.filhos):
             ultimo_filho = (i == len(self.filhos) - 1)
             filho.imprimir_visual(proximo_prefixo, ultimo_filho, False)
-
-    # Conversão para "dicionário" JSON
-    def para_dicionario(self):
-        dicionario = {"no": self.rotulo}
-        if self.filhos:
-            dicionario["filhos"] = [filho.para_dicionario() for filho in self.filhos]
-        return dicionario
 
 # 1. ANÁLISE LÉXICA
 
@@ -277,15 +269,10 @@ if __name__ == "__main__":
     parser.analisar()
     
     print("\n--- ÁRVORE SINTÁTICA ABSTRATA (AST) - VISUAL ---")
-    ast_em_dicionarios = []
-    
     for ast in parser.ast_roots:
         # Imprime a árvore com os tracinhos no terminal
         ast.imprimir_visual()
         print("")
-
-        # Guarda o nó num formato compatível com JSON
-        ast_em_dicionarios.append(ast.para_dicionario())
         
     print("\n--- VALIDAÇÃO SEMÂNTICA ---")
     if parser.erros_semanticos:
