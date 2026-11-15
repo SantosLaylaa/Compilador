@@ -268,7 +268,7 @@ if __name__ == "__main__":
     parser = Parser(tokens, tabela_simbolos)
     parser.analisar()
     
-    print("\n--- ÁRVORE SINTÁTICA ABSTRATA (AST) - VISUAL ---")
+    print("\n--- ÁRVORE SINTÁTICA ABSTRATA ---")
     for ast in parser.ast_roots:
         # Imprime a árvore com os tracinhos no terminal
         ast.imprimir_visual()
